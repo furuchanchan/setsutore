@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { callTool, readUploadedImage, reserveAiCall, toBase64 } from "../ai";
 import { HttpError } from "../errors";
+import { promoteDraft } from "../photos";
 import type { AppEnv } from "../env";
 import { loadPantry } from "../pantry";
 import { daySchema, mealSaveSchema } from "../schemas";
@@ -57,7 +58,7 @@ mealRoutes.post("/meals/scan", async (c) => {
     if (!item || item.quantity === null) return [];
     return [{ pantry_item_id: item.id, name: item.name, quantity: ing.quantity ?? 1, unit: item.unit }];
   });
-  const imageKey = `meals/${crypto.randomUUID()}`;
+  const imageKey = `drafts/${crypto.randomUUID()}`;
   await c.env.PHOTOS.put(imageKey, bytes, { httpMetadata: { contentType: mediaType } });
   return c.json({
     image_key: imageKey,
@@ -73,9 +74,7 @@ mealRoutes.post("/meals/scan", async (c) => {
 mealRoutes.post("/meals", async (c) => {
   const m = await readJson(c, mealSaveSchema);
   const db = c.env.DB;
-  if (m.image_key && !(await c.env.PHOTOS.head(m.image_key))) {
-    throw new HttpError(400, "image_key の画像が見つかりません");
-  }
+  const imageKey = m.image_key ? await promoteDraft(c.env.PHOTOS, m.image_key, "meals") : null;
   const ids = [...new Set(m.consume.map((x) => x.pantry_item_id))];
   if (ids.length > 0) {
     const { results } = await db
@@ -95,14 +94,15 @@ mealRoutes.post("/meals", async (c) => {
       .prepare(
         "INSERT INTO meals (id, eaten_at, image_key, title, kcal, protein_g, fat_g, carbs_g, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
-      .bind(id, eatenAt, m.image_key ?? null, m.title, m.kcal, m.protein_g, m.fat_g, m.carbs_g, m.note ?? null, nowIso),
+      .bind(id, eatenAt, imageKey, m.title, m.kcal, m.protein_g, m.fat_g, m.carbs_g, m.note ?? null, nowIso),
     ...m.consume.map((x) =>
       db
         .prepare("UPDATE pantry_items SET quantity = MAX(0, quantity - ?), updated_at = ? WHERE id = ? AND quantity IS NOT NULL")
         .bind(x.quantity, nowIso, x.pantry_item_id),
     ),
   ]);
-  return c.json({ id, eaten_at: eatenAt, pantry: await loadPantry(db) }, 201);
+  if (m.image_key) await c.env.PHOTOS.delete(m.image_key);
+  return c.json({ id, eaten_at: eatenAt, image_key: imageKey, pantry: await loadPantry(db) }, 201);
 });
 
 mealRoutes.get("/meals", async (c) => {

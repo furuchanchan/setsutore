@@ -75,7 +75,7 @@ describe("レシート", () => {
     const res = await call("/api/receipts/scan", imageForm(), cookie);
     expect(res.status).toBe(200);
     const body = (await res.json()) as typeof draft & { image_key: string };
-    expect(body.image_key).toMatch(/^receipts\/[0-9a-f-]{36}$/);
+    expect(body.image_key).toMatch(/^drafts\/[0-9a-f-]{36}$/);
     expect(body.items[0]!.food_name).toBe("鶏むね肉");
     expect(await env.PHOTOS.head(body.image_key)).not.toBeNull();
     expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM receipts").first<{ n: number }>())!.n).toBe(0);
@@ -101,14 +101,15 @@ describe("レシート", () => {
     const cookie = await login();
     await call("/api/pantry", json({ name: "卵", kind: "food", category: "protein", quantity: 4, unit: "個" }), cookie);
     await call("/api/pantry", json({ name: "醤油", kind: "seasoning", category: "seasoning", level: "out" }), cookie);
-    await env.PHOTOS.put("receipts/00000000-0000-0000-0000-000000000001", PNG);
+    const draftKey = "drafts/00000000-0000-0000-0000-000000000001";
+    await env.PHOTOS.put(draftKey, PNG, { httpMetadata: { contentType: "image/png" } });
     const item = (food_name: string, category: string, quantity: number, unit: string, add: boolean) => ({
       printed_name: food_name, food_name, category, quantity, unit, price_yen: 100, add_to_pantry: add,
     });
     const res = await call(
       "/api/receipts",
       json({
-        image_key: "receipts/00000000-0000-0000-0000-000000000001",
+        image_key: draftKey,
         store: "スーパーA",
         purchased_at: "2026-10-14",
         total_yen: 800,
@@ -117,7 +118,10 @@ describe("レシート", () => {
       cookie,
     );
     expect(res.status).toBe(201);
-    const { id, pantry } = (await res.json()) as { id: string; pantry: Pantry[] };
+    const { id, pantry, image_key } = (await res.json()) as { id: string; pantry: Pantry[]; image_key: string };
+    expect(image_key).toBe("receipts/00000000-0000-0000-0000-000000000001");
+    expect(await env.PHOTOS.head(draftKey)).toBeNull();
+    expect((await env.PHOTOS.head(image_key))?.httpMetadata?.contentType).toBe("image/png");
     expect(find(pantry, "卵")!.quantity).toBe(10);
     expect(find(pantry, "醤油")!.level).toBe("full");
     expect(find(pantry, "ブロッコリー")!.quantity).toBe(2);
@@ -129,9 +133,19 @@ describe("レシート", () => {
     expect((await call("/api/receipts?month=2026-9", {}, cookie)).status).toBe(400);
 
     expect((await call(`/api/receipts/${id}`, { method: "DELETE" }, cookie)).status).toBe(200);
-    expect(await env.PHOTOS.head("receipts/00000000-0000-0000-0000-000000000001")).toBeNull();
+    expect(await env.PHOTOS.head(image_key)).toBeNull();
     expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM receipt_items").first<{ n: number }>())!.n).toBe(0);
     expect((await call(`/api/receipts/${id}`, { method: "DELETE" }, cookie)).status).toBe(404);
+  });
+
+  it("drafts/ 以外・存在しない鍵は 400 で何も保存しない", async () => {
+    const cookie = await login();
+    await env.PHOTOS.put("receipts/00000000-0000-0000-0000-000000000009", PNG);
+    const body = (image_key: string) => json({ image_key, store: "A", purchased_at: "2026-10-14", total_yen: 1, items: [] });
+    expect((await call("/api/receipts", body("receipts/00000000-0000-0000-0000-000000000009"), cookie)).status).toBe(400);
+    expect((await call("/api/receipts", body("drafts/00000000-0000-0000-0000-00000000000a"), cookie)).status).toBe(400);
+    expect((await call("/api/receipts", body("../etc"), cookie)).status).toBe(400);
+    expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM receipts").first<{ n: number }>())!.n).toBe(0);
   });
 
   it("不正な入力は 400", async () => {
@@ -177,6 +191,24 @@ describe("食事", () => {
     expect((await call(`/api/meals/${meals.meals[0]!.id}`, { method: "DELETE" }, cookie)).status).toBe(200);
   });
 
+  it("食事の保存で下書き画像が meals/ へ移り、drafts/ は消える。別の鍵は 400", async () => {
+    const cookie = await login();
+    const draftKey = "drafts/00000000-0000-0000-0000-000000000002";
+    await env.PHOTOS.put(draftKey, PNG, { httpMetadata: { contentType: "image/png" } });
+    const meal = (image_key: string) => json({ image_key, title: "x", kcal: 1, protein_g: 1, fat_g: 1, carbs_g: 1 });
+    expect((await call("/api/meals", meal("meals/00000000-0000-0000-0000-000000000002"), cookie)).status).toBe(400);
+    const res = await call("/api/meals", meal(draftKey), cookie);
+    expect(res.status).toBe(201);
+    const { id, image_key } = (await res.json()) as { id: string; image_key: string };
+    expect(image_key).toBe("meals/00000000-0000-0000-0000-000000000002");
+    expect(await env.PHOTOS.head(draftKey)).toBeNull();
+    expect(await env.PHOTOS.head(image_key)).not.toBeNull();
+    const row = await env.DB.prepare("SELECT image_key FROM meals WHERE id = ?").bind(id).first<{ image_key: string }>();
+    expect(row?.image_key).toBe(image_key);
+    await call(`/api/meals/${id}`, { method: "DELETE" }, cookie);
+    expect(await env.PHOTOS.head(image_key)).toBeNull();
+  });
+
   it("存在しない在庫を consume すると 400 で何も保存しない", async () => {
     const cookie = await login();
     const res = await call("/api/meals", json({ title: "x", kcal: 1, protein_g: 1, fat_g: 1, carbs_g: 1, consume: [{ pantry_item_id: "nope", quantity: 1 }] }), cookie);
@@ -194,7 +226,7 @@ describe("食事", () => {
     });
     const res = await call("/api/meals/scan", imageForm(), cookie);
     const body = (await res.json()) as { image_key: string; ingredients: { name: string; quantity: number; pantry_item_id: string }[] };
-    expect(body.image_key).toMatch(/^meals\//);
+    expect(body.image_key).toMatch(/^drafts\//);
     expect(body.ingredients.map((i) => [i.name, i.quantity])).toEqual([["卵", 1]]);
   });
 });

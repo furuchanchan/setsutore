@@ -35,6 +35,9 @@ npx wrangler login
 # 1. D1 と R2 を作る
 npx wrangler d1 create setsutore
 npx wrangler r2 bucket create setsutore-photos
+
+# 保存されなかった下書き画像（drafts/）は R2 のライフサイクルで1日後に消す
+npx wrangler r2 bucket lifecycle add setsutore-photos drafts-expire drafts/ --expire-days 1
 ```
 
 `wrangler d1 create` で出た `database_id` を、`wrangler.jsonc` の `database_id` に書き換えます（入っている値は作者の環境のものです）。
@@ -68,10 +71,10 @@ npm run build       # web/dist を作る
 - `POST /api/login` `{passcode}` / `POST /api/logout` / `GET /api/health`
 - `GET /api/summary`
 - `GET|PUT /api/settings`
-- `POST /api/receipts/scan`（画像）→ 下書き / `POST /api/receipts` / `GET /api/receipts?month=YYYY-MM` / `DELETE /api/receipts/:id`
+- `POST /api/receipts/scan`（画像）→ 下書き（画像は `drafts/<uuid>`。保存すると `receipts/<uuid>` へ移り、drafts は消える）/ `POST /api/receipts` / `GET /api/receipts?month=YYYY-MM` / `DELETE /api/receipts/:id`
 - `GET /api/pantry` / `POST|PATCH|DELETE /api/pantry/:id`
 - `POST /api/talk` `{text}`
-- `POST /api/meals/scan`（画像）→ 下書き / `POST /api/meals` / `GET /api/meals?date=YYYY-MM-DD` / `DELETE /api/meals/:id`
+- `POST /api/meals/scan`（画像）→ 下書き（同上、保存先は `meals/<uuid>`）/ `POST /api/meals` / `GET /api/meals?date=YYYY-MM-DD` / `DELETE /api/meals/:id`
 - `GET /api/workouts?from=&to=` / `POST /api/workouts` / `DELETE /api/workouts/:id` / `GET /api/workouts/exercises`
 - `GET /api/photos/*`
 

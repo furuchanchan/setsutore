@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { callTool, readUploadedImage, reserveAiCall, toBase64 } from "../ai";
 import { HttpError } from "../errors";
+import { promoteDraft } from "../photos";
 import type { AppEnv } from "../env";
 import { PantryState, applyPurchase, loadPantry, pantryStatements } from "../pantry";
 import { MONTH_RE, jstDay, jstMonth } from "../time";
@@ -39,16 +40,14 @@ receiptRoutes.post("/receipts/scan", async (c) => {
     schema: scanResultSchema,
     maxTokens: 4096,
   });
-  const imageKey = `receipts/${crypto.randomUUID()}`;
+  const imageKey = `drafts/${crypto.randomUUID()}`;
   await c.env.PHOTOS.put(imageKey, bytes, { httpMetadata: { contentType: mediaType } });
   return c.json({ image_key: imageKey, ...draft });
 });
 
 receiptRoutes.post("/receipts", async (c) => {
   const r = await readJson(c, receiptSaveSchema);
-  if (r.image_key && !(await c.env.PHOTOS.head(r.image_key))) {
-    throw new HttpError(400, "image_key の画像が見つかりません");
-  }
+  const imageKey = r.image_key ? await promoteDraft(c.env.PHOTOS, r.image_key, "receipts") : null;
   const nowIso = new Date().toISOString();
   const receiptId = crypto.randomUUID();
   const db = c.env.DB;
@@ -61,7 +60,7 @@ receiptRoutes.post("/receipts", async (c) => {
   await db.batch([
     db
       .prepare("INSERT INTO receipts (id, store, purchased_at, total_yen, image_key, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-      .bind(receiptId, r.store, r.purchased_at, r.total_yen, r.image_key ?? null, nowIso),
+      .bind(receiptId, r.store, r.purchased_at, r.total_yen, imageKey, nowIso),
     ...r.items.map((it) =>
       db
         .prepare(
@@ -71,7 +70,8 @@ receiptRoutes.post("/receipts", async (c) => {
     ),
     ...pantryStatements(db, state),
   ]);
-  return c.json({ id: receiptId, pantry: await loadPantry(db) }, 201);
+  if (r.image_key) await c.env.PHOTOS.delete(r.image_key);
+  return c.json({ id: receiptId, image_key: imageKey, pantry: await loadPantry(db) }, 201);
 });
 
 receiptRoutes.get("/receipts", async (c) => {

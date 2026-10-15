@@ -36,7 +36,7 @@ export const receiptItemSchema = z.object({
 });
 
 export const receiptSaveSchema = z.object({
-  image_key: imageKey("receipts").nullish(),
+  image_key: imageKey("drafts").nullish(),
   store: z.string().trim().min(1).max(100),
   purchased_at: daySchema,
   total_yen: yen,
@@ -74,7 +74,7 @@ export const workoutInputSchema = z.object({
 });
 
 export const mealSaveSchema = z.object({
-  image_key: imageKey("meals").nullish(),
+  image_key: imageKey("drafts").nullish(),
   eaten_at: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/)
