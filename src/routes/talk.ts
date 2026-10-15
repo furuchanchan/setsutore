@@ -25,6 +25,13 @@ const SYSTEM = `あなたは「セツトレ」のマスコットです。節約�
 
 export const talkRoutes = new Hono<AppEnv>();
 
+talkRoutes.get("/talk/messages", async (c) => {
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, role, content, created_at FROM chat_messages ORDER BY created_at DESC, id DESC LIMIT 50",
+  ).all();
+  return c.json({ messages: results.reverse() });
+});
+
 talkRoutes.post("/talk", async (c) => {
   const { text } = await readJson(c, talkSchema);
   const db = c.env.DB;

@@ -52,6 +52,9 @@ describe("会話 /api/talk", () => {
     await call("/api/talk", json({ text: "ふたこと目" }), cookie);
     const msgs = m.requests[0]!.messages;
     expect(msgs.map((x) => x.role)).toEqual(["user", "assistant", "user"]);
+    const hist = (await (await call("/api/talk/messages", {}, cookie)).json()) as { messages: { role: string; content: string }[] };
+    expect(hist.messages.map((x) => x.role)).toEqual(["user", "assistant", "user", "assistant"]);
+    expect(hist.messages[0]!.content).toBe("ひとこと目");
   });
 
   it("AI の応答が想定外なら 502、入力が空なら 400", async () => {
