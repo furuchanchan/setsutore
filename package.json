@@ -1,0 +1,30 @@
+{
+  "name": "setsutore",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "セツトレ: 節約しながら筋トレする人の管理アプリ（Cloudflare Workers）",
+  "license": "MIT",
+  "scripts": {
+    "build": "npm --prefix web run build",
+    "dev": "wrangler dev",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json && npm --prefix web run typecheck",
+    "deploy": "npm run build && wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.4.2",
+    "@cloudflare/workers-types": "5.20261015.1",
+    "@types/node": "26.6.5",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11",
+    "wrangler": "4.151.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.134.0",
+    "hono": "4.13.13",
+    "zod": "4.6.7"
+  }
+}
