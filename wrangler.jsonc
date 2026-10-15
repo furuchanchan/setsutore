@@ -12,8 +12,8 @@
     {
       "binding": "DB",
       "database_name": "setsutore",
-      // wrangler d1 create setsutore で出た database_id に置き換える
-      "database_id": "REPLACE_ME",
+      // 自分の Cloudflare に置くときは、wrangler d1 create setsutore で出た database_id に置き換える
+      "database_id": "d5eb0544-2919-4228-b8bf-aaba1297f860",
       "migrations_dir": "migrations"
     }
   ],

@@ -37,7 +37,7 @@ npx wrangler d1 create setsutore
 npx wrangler r2 bucket create setsutore-photos
 ```
 
-`wrangler d1 create` で出た `database_id` を `wrangler.jsonc` の `REPLACE_ME` に書き換えます。
+`wrangler d1 create` で出た `database_id` を、`wrangler.jsonc` の `database_id` に書き換えます（入っている値は作者の環境のものです）。
 
 ```sh
 # 2. テーブルを作る
