@@ -48,6 +48,8 @@ export default {
       url.protocol = "https:";
       return Response.redirect(url.toString(), 301);
     }
+    // workers.dev はゾーンの最小 TLS（1.2）が効かないので、古い TLS の要求はここで断る
+    if (["TLSv1", "TLSv1.1"].includes(request.cf?.tlsVersion as string)) return Response.json({ error: "TLS 1.2 以上でアクセスしてください" }, { status: 426 });
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return app.fetch(request, env, ctx);
     return env.ASSETS.fetch(request);
   },
