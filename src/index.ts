@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { Hono } from "hono";
 import { authGuard } from "./auth";
-import type { AppEnv } from "./env";
+import type { AppEnv, Bindings } from "./env";
 import { HttpError } from "./errors";
 import { authRoutes } from "./routes/auth";
 import { mealRoutes } from "./routes/meals";
@@ -39,4 +39,16 @@ app.onError((err, c) => {
   return c.json({ error: "サーバー内部のエラーです" }, 500);
 });
 
-export default app;
+// workers.dev は Cloudflare のゾーン設定が効かず http でも届くので、画面も API も Worker で受けて https へそろえる（手元の wrangler dev だけ通す）
+export default {
+  fetch(request: Request, env: Bindings, ctx: ExecutionContext) {
+    const url = new URL(request.url);
+    if (url.protocol === "http:" && !["localhost", "127.0.0.1"].includes(url.hostname)) {
+      if (request.method !== "GET" && request.method !== "HEAD") return Response.json({ error: "https でアクセスしてください" }, { status: 403 });
+      url.protocol = "https:";
+      return Response.redirect(url.toString(), 301);
+    }
+    if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return app.fetch(request, env, ctx);
+    return env.ASSETS.fetch(request);
+  },
+} satisfies ExportedHandler<Bindings>;
