@@ -1,4 +1,5 @@
 export type Bindings = {
+  ASSETS: Fetcher;
   DB: D1Database;
   PHOTOS: R2Bucket;
   AI_DAILY_LIMIT: string;
